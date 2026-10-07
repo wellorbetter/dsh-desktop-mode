@@ -24,11 +24,11 @@
 2. 双击解压出来的 `host\install.cmd`（或 `pwsh -File host\install.ps1`）——**注意在 `host\` 子目录里**。它会：
    - 找到宿主 App（找不到会提示，或用 `-ShellExe "<exe 路径>"` 指定）；
    - 把工具装到 `%LOCALAPPDATA%\dsh-desktop-mode`；
-   - 装插件（默认走 npm；离线或本地开发用 `-FromLocal`）；
+   - 装插件：直接用**包内自带的**那份（不需要 npm、不需要联网）；
    - 注册开机自启，然后立即启动。
 3. 桌面随即变成 DSH。
 
-常用参数：`-ShellExe` · `-FromLocal` · `-SkipAutostart` · `-SkipStart` · `-WhatIf`（只看计划不动手）。
+常用参数：`-ShellExe` · `-SkipAutostart` · `-SkipStart` · `-WhatIf`（只看计划不动手）· `-FromNpm`（将来 npm 上有包时改从 npm 装）。
 
 ## 卸载
 

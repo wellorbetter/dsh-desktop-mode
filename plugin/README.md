@@ -2,21 +2,16 @@
 
 把 DSH 变成 Windows 桌面：壁纸上方的时间 / 日期 / 手写文字 / 天气 / fps 挂件层，以及"点输入框就能打字"（原生工具负责离开、回到桌面层并接管键盘）。
 
-> **这是插件半，只有插件不能用。** 桌面层、隐藏图标、打字切换、开机自启、托盘这些网页做不到的事由**原生宿主包**提供 —— 见[仓库主页](https://github.com/wellorbetter/dsh-desktop-mode)的 `host/`（`install.ps1`）。
+> **这是插件半，只有插件不能用。** 桌面层、隐藏图标、打字切换、开机自启、托盘这些网页做不到的事由**原生宿主包**提供。
+>
+> **插件就在发行包里，不需要从 npm 装。** 下载 [Release](https://github.com/wellorbetter/dsh-desktop-mode/releases) 的 `dsh-desktop-mode-v<版本>.zip`，解压后跑 `host\install.cmd` —— 它会把这个插件装进你的 DSH，同时装好原生工具、注册开机自启。没有 npm、没有网络、没有编译器要求。
 
-## 装
+## 手动装（一般不需要）
 
-推荐直接跑宿主安装器，它会同时装好插件和原生工具：
-
-```powershell
-# 从发行包解出来的目录里
-pwsh -File host\install.ps1
-```
-
-已经装过宿主、只想自己装插件：
+宿主已经装好、只想自己装插件时，用发行包里那份的绝对路径：
 
 ```powershell
-dsh plugin --profile web add dsh-plugin-desktop-mode
+dsh plugin --profile web add link:"C:\Users\<你>\AppData\Local\dsh-desktop-mode\plugin"
 ```
 
 ## 它做了什么

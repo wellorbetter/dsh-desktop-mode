@@ -1,6 +1,6 @@
 # 发布流程
 
-这个仓库有两半：`plugin/`（装进 DSH 的插件）和 `host/` + `tools/`（原生宿主包）。对外发布走**两个渠道**：GitHub Release 里的发行包 zip，以及 npm 上的插件包 —— 两者版本号必须一致。
+这个仓库有两半：`plugin/`（装进 DSH 的插件）和 `host/` + `tools/`（原生宿主包）。对外只有一个渠道：**GitHub Release 里的自包含发行包 zip**（插件就装在包里）。
 
 > 涉及 GitHub / npm 的动作（建仓库、push、打 tag、发 Release、publish）按 `personal-contribution` 的规矩走：确认仓库身份、分支、权限范围，不擅自扩大范围。
 
@@ -65,21 +65,26 @@ pwsh -File packaging/verify-release.ps1
 
 > 发布前已核实（2026-10-08，只读）：npm 上 `dsh-plugin-desktop-mode` **未被占用**（registry 404），GitHub 上 `wellorbetter/dsh-desktop-mode` **未被占用**（API 404，且 `wellorbetter` 账号存在、id 与 git config 里的邮箱一致）。
 
-## npm
+## 渠道：只有 GitHub Release（npm 未启用）
 
-插件本身就是 npm 包，`files` 只含 `lib/`、`cordis.patch.yml`、`README.md`：
+**发行包是自包含的**：预编译好的原生工具 + 插件 + 安装器都在 zip 里，用户解压 → 双击 `host\install.cmd` 就完事，**不需要 npm、不需要联网、不需要编译器**。安装器默认就用包内那份插件（`link:<安装目录>\plugin`）。
+
+因此**唯一渠道是 GitHub Release**：上传 `dsh-desktop-mode-v<版本>.zip` 与 `SHA256SUMS.txt`。
+
+npm 渠道目前**不发布**（用户 2026-10-08 决定）。插件本身仍是一个合规的 npm 包，将来要发的话：
 
 ```powershell
 cd plugin
-pnpm pack --pack-destination <临时目录>   # 本机没有 npm CLI 时用 pnpm 核对文件清单
-npm publish                                # 需要 npm CLI + 已登录（本机目前没有 npm）
+pnpm pack --pack-destination <临时目录>   # 本机没有 npm CLI 时用它核对文件清单（正好 9 个文件）
+pnpm publish --access public               # pnpm 11 自带 publish；需要 npm 登录凭据
 ```
 
-发布前确认：
+发之前确认：
 
 - 包里**没有** `widgets.json`（那是用户配置，装在安装目录里，不该进包）、没有 `logs/`、没有任何私人内容；
 - `package.json` 的 `repository` / `homepage` / `bugs` / `author` 指向真实地址；
-- 版本号与 GitHub Release 的 tag 一致。
+- 版本号与 GitHub Release 的 tag 一致；
+- 一旦 npm 上有了包，安装器的 `-FromNpm` 才会真正有用（默认仍是包内那份）。
 
 ## 明确不发布的内容
 
@@ -96,4 +101,4 @@ the page read it from there). To release: run `node test/widget-config.mjs`, the
 content, that every shipped script parses, and that the shipped widget-config
 contract still holds. Walk the live checklist above on a real desktop, tag
 `v<version>`, attach **both** the zip and `SHA256SUMS.txt` to the GitHub Release,
-and publish the plugin to npm with `npm publish` (npm CLI + login required).
+There is no npm channel: the plugin ships inside the archive and the installer links the bundled copy, so installing needs no registry and no network.

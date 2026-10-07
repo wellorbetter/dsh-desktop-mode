@@ -11,8 +11,8 @@
       并解包到 <安装目录>\app —— 有 zip 的用户不需要自己解包。
    2. 把工具复制到安装目录（默认 %LOCALAPPDATA%\dsh-desktop-mode）。
    3. 写 config.json：宿主 App 路径、端口、工具路径 —— 装到别处后启动器靠它工作。
-   4. 装插件：默认从 npm 装 dsh-plugin-desktop-mode；-FromLocal 或 npm 不可用时用
-      包内自带的 plugin 目录做本地 link 安装（离线也能装）。
+   4. 装插件：用**包内自带的** plugin 目录做本地 link 安装 —— 这个包是自包含的，
+      不需要 npm、不需要联网。（想从 npm 装（将来发布后）加 -FromNpm。）
    5. 注册开机自启（HKCU Run，可用 -SkipAutostart 跳过），可选立即启动。
 
   只有 -WhatIf 时不写任何东西，只打印计划。
@@ -28,7 +28,12 @@ param(
   [int]$WebPort = 3081,
   [int]$DebugPort = 9222,
   [string]$InstallDir,
+  # Kept for compatibility: installing the bundled plugin is now the default, so
+  # this switch no longer changes anything.
   [switch]$FromLocal,
+  # Install dsh-plugin-desktop-mode from the npm registry instead of the copy in
+  # this archive. Only useful once the package is actually published there.
+  [switch]$FromNpm,
   [switch]$SkipAutostart,
   [switch]$SkipStart
 )
@@ -162,13 +167,18 @@ if ($PSCmdlet.ShouldProcess($InstallDir, '写 config.json')) {
 }
 
 # ------------------------------------------------------------------ 插件 --
-# `-FromLocal` links the plugin into the profile. Link the *installed* copy, not
-# the directory this script was run from: people install from their Downloads
-# folder and delete the archive afterwards, which would break a link pointing back
-# into it (the payload copy above already put a durable copy in the install dir).
+# The plugin is installed from the copy inside this archive.
+#
+# Link the *installed* copy, not the directory this script was run from: people
+# install from their Downloads folder and delete the archive afterwards, which
+# would break a link pointing back into it (the payload copy above already put a
+# durable copy in the install dir). No npm and no network are involved, which is
+# what makes this archive self-contained.
 $installedPlugin = Join-Path $InstallDir 'plugin'
 $pluginLinkSource = if (Test-Path (Join-Path $installedPlugin 'package.json')) { $installedPlugin } else { $pluginSource }
-$pluginSpec = if ($FromLocal -and (Test-Path $pluginLinkSource)) { "link:$pluginLinkSource" } else { 'dsh-plugin-desktop-mode' }
+$bundledSpec = "link:$pluginLinkSource"
+$pluginSpec = if ($FromNpm) { 'dsh-plugin-desktop-mode' } else { $bundledSpec }
+if (-not (Test-Path $pluginLinkSource)) { throw "发行包不完整：找不到插件目录 $pluginLinkSource" }
 Say "  安装插件：dsh plugin --profile web add $pluginSpec"
 if ($PSCmdlet.ShouldProcess('profile web', "安装插件 $pluginSpec")) {
   & $dshCommand plugin --profile web add $pluginSpec 2>&1 | ForEach-Object { "    $_" }
@@ -179,9 +189,11 @@ if ($PSCmdlet.ShouldProcess('profile web', "安装插件 $pluginSpec")) {
     $installed = [bool]($profile.dependencies.PSObject.Properties.Name -contains 'dsh-plugin-desktop-mode')
   } catch { $installed = $false }
   if (-not $installed) {
-    if ($pluginSpec -ne 'dsh-plugin-desktop-mode') { throw '插件安装后未出现在 profile 依赖里' }
-    Say '  npm 安装未生效，退回本地 link 安装…'
-    & $dshCommand plugin --profile web add "link:$pluginLinkSource" 2>&1 | ForEach-Object { "    $_" }
+    if ($pluginSpec -ne 'dsh-plugin-desktop-mode') { throw "插件安装后未出现在 profile 依赖里（$pluginSpec）" }
+    # Only reachable with -FromNpm: the registry copy failed, so fall back to the
+    # one in this archive rather than leaving the user without a plugin.
+    Say '  从 npm 安装未生效，退回包内自带的插件…'
+    & $dshCommand plugin --profile web add $bundledSpec 2>&1 | ForEach-Object { "    $_" }
   }
 }
 

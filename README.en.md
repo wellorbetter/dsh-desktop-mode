@@ -24,11 +24,11 @@ It ships as two halves (not a choice, a division of labour):
 2. Run `host\install.cmd` (or `pwsh -File host\install.ps1`) — note it lives in the `host\` subdirectory. It will:
    - locate the host app (or tell you to pass `-ShellExe "<path to exe>"`);
    - install the tooling into `%LOCALAPPDATA%\dsh-desktop-mode`;
-   - install the plugin (from npm by default; `-FromLocal` for offline/local development);
+   - install the plugin from the copy inside this archive (no npm, no network);
    - register autostart and start the layer.
 3. The desktop becomes DSH.
 
-Useful flags: `-ShellExe` · `-FromLocal` · `-SkipAutostart` · `-SkipStart` · `-WhatIf` (plan only, change nothing).
+Useful flags: `-ShellExe` · `-SkipAutostart` · `-SkipStart` · `-WhatIf` (plan only, change nothing) · `-FromNpm` (install the plugin from the registry instead, once it is published there).
 
 ## Uninstall
 
