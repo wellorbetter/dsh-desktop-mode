@@ -1,0 +1,72 @@
+{
+  "enabled": true,
+  "onlyOnNewSession": false,
+  "onlyOnNewSession_comment": "false = 挂件一直在桌面上（桌面本来就该一直有时钟）。true = 只在新会话显示，恢复会话时整层隐藏。",
+
+  "enabled_comment": "这个文件就是 DSH 桌面模式的挂件配置：安装后位于 <安装目录>\\widgets.json，插件在页面加载时读取它。改完刷新页面即可生效（设置页在计划中）。JSON 不支持注释，说明都写在 *_comment 字段里。",
+
+  "clock": {
+    "enabled": true,
+    "anchor": { "left": "14.6%", "top": "9.5%" },
+    "temperature": "",
+    "temperature_comment": "显示在时间上方的小字（例如 28°）；留空则不显示",
+    "hour12": false,
+    "showSeconds": false,
+    "showDate": true,
+    "showWeekday": true,
+    "weekdayLocale": "en",
+    "scale": 1,
+    "color": "",
+
+    "color_comment": "color 留空 = 由壁纸取色自动决定文字颜色（见 contrast）；填了颜色则强制使用它",
+    "legibility_comment": "看清程度：weight 字重（200 很细、300-400 更实）；stroke 描边像素（0 关闭）；shadow 投影 strong|soft|none；backdrop 文字底下的柔光 0-0.6",
+    "weight": 300,
+    "stroke": 1,
+    "shadow": "strong",
+    "backdrop": 0.28
+  },
+
+  "contrast": {
+    "contrast_comment": "文字颜色按【文字所在那一块】的壁纸亮度自动选：brightest <= darkBelow 视为深色壁纸 ⇒ 白字；darkest >= lightAbove 视为亮色壁纸 ⇒ 黑字（带白描边）；介于两者之间保持当前配色，靠描边与柔光拉开对比。切换有迟滞（连续 switchAfter 次一致才切），避免视频壁纸逐帧明暗导致闪烁。事件来源：页内监听壁纸元素/属性变化，宿主侧另提供当前壁纸 id 供页面轮询（换壁纸立刻重采样）；intervalMs 只是低频兜底。mode 可强制 light|dark|auto。",
+    "enabled": true,
+    "mode": "auto",
+    "watchWallpaper": true,
+    "intervalMs": 30000,
+    "darkBelow": 0.45,
+    "lightAbove": 0.55,
+    "switchAfter": 3,
+    "sampleWidth": 160
+  },
+
+  "caption": {
+    "caption_comment": "壁纸上的手写体文字。text 留空就不显示这一块。",
+    "enabled": true,
+    "text": "",
+    "sub": ""
+  },
+
+  "meta": {
+    "meta_comment": "右上角：实时 fps + 当前壁纸主题名。themeName / themeAlias 留空则只显示 fps。",
+    "enabled": true,
+    "anchor": { "right": "3.2%", "top": "10.2%" },
+    "showFps": true,
+    "themeName": "",
+    "themeAlias": ""
+  },
+
+  "weather": {
+    "weather_comment": "天气角标：glyph 是一个字符或 emoji（例如 雪 / ☀），temperature 例如 26°。两者都留空则整块不显示。",
+    "enabled": false,
+    "anchor": { "right": "2.3%", "top": "0.9%" },
+    "glyph": "",
+    "temperature": ""
+  },
+
+  "character": {
+    "character_comment": "右下角角色立绘：填 http(s) 图片地址或 data:image/...，height 为屏高百分比。",
+    "enabled": false,
+    "src": "",
+    "anchor": { "right": "1.6%", "bottom": "0.8%" },
+    "height": "30%"
+  }
+}

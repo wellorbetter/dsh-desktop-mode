@@ -1,0 +1,30 @@
+{
+  "name": "dsh-plugin-desktop-mode",
+  "version": "0.0.1",
+  "description": "DSH 桌面模式：把 DSH 变成 Windows 桌面 —— 壁纸上方的时间/日期/手写文字/天气/fps 挂件层，以及\"点输入框即可打字\"（原生工具负责离开/回到桌面层并接管键盘）。配套原生宿主包提供桌面层、图标、自启与托盘。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "desktop",
+    "desktop-mode",
+    "widget",
+    "wallpaper"
+  ],
+  "type": "module",
+  "main": "lib/index.js",
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT"
+}

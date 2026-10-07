@@ -1,0 +1,24 @@
+# Third-party desktop app copy — never published (it is someone else's app, ~318 MB)
+shell/
+
+# Runtime state and private notes
+logs/
+state/
+.evidence/
+config/
+
+# Build artifacts (the native tool is built from tools/native/*.cs)
+tools/bin/*.exe
+tools/bin/*.dll
+tools/bin/*.pdb
+dist/
+
+# Node
+node_modules/
+plugin/node_modules/
+
+# Editors / misc
+*.bak
+*.orig
+*.zip
+packaging/staging/

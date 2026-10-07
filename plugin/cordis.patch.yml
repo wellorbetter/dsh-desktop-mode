@@ -1,0 +1,15 @@
+# dsh-plugin-desktop-mode —— DSH bundle patch
+#
+# 挂载声明：DSH 启动时按 bundle 层栈叠加各插件的 patch，本文件把插件插入 Web profile。
+#
+# 安装：
+#   dsh plugin --profile web add dsh-plugin-desktop-mode      # 从 npm
+#   dsh plugin --profile web add link:<本目录绝对路径>          # 本地开发
+#
+# 插件本身只负责"界面里的那半"（挂件层、打字触发、设置页、以及调用原生工具的 host 路由）。
+# "把窗口钉进 Windows 桌面 / 离开桌面层 / 隐藏图标 / 开机自启 / 托盘"由配套的原生宿主包完成，
+# 它们需要 Win32，网页做不到。
+
+- insert:
+    - id: dsh-desktop-mode
+      name: dsh-plugin-desktop-mode
