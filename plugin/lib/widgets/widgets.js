@@ -168,6 +168,10 @@
   const state = {
     config: merge(DEFAULTS, boot.config),
     root: null,
+    // How many times the layer has been built. `instanceId` identifies the module
+    // (it never changes), so this is the only observable that says "the layer was
+    // rebuilt" — the launcher's reload check and the settings page both need it.
+    renders: 0,
     nodes: {},
     timer: null,
     rafId: null,
@@ -492,6 +496,7 @@
   function render() {
     const config = state.config
     if (!config.enabled) return remove()
+    state.renders += 1
 
     ensureStyle(boot.css)
 
@@ -743,6 +748,7 @@
     state() {
       return {
         instanceId: api.instanceId,
+        renders: state.renders,
         palettes: state.palettes,
         mounted: state.root !== null,
         visible: state.root !== null && !state.root.hidden,

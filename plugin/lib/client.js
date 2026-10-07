@@ -196,28 +196,41 @@
   }
 
   /**
-   * The host side of "the wallpaper changed".
+   * The host side of "the wallpaper changed" and "the configuration changed".
    *
    * The widget layer already watches the wallpaper element in-page, but a scene
    * wallpaper can swap its frames inside the same element, so the host-side id is
-   * the reliable signal. Polling one small number is what the old injection
-   * daemon did by watching the file; here the page asks the plugin.
+   * the reliable signal. Polling two small values is what the old injection
+   * daemon did by watching files; here the page asks the plugin.
+   *
+   * `revision` is the configuration file's identity (mtime + size): editing
+   * `widgets.json` by hand, or the tray's "reload widgets" touching it, now takes
+   * effect within one poll instead of needing a page reload.
    */
   function watchWallpaperId() {
-    var last = null
+    var lastId = null
+    var lastRevision = null
     window.setInterval(function () {
       fetch(BASE + '/wallpaper-id', { headers: { Accept: 'application/json' } })
         .then(function (response) { return response.json() })
         .then(function (payload) {
           if (!payload || payload.ok !== true) return
           var id = String(payload.id || '')
-          if (last === null) { last = id; return }
-          if (id === last) return
-          last = id
-          try {
-            var api = window.__dshDesktopWidgets
-            if (api && api.resample) api.resample('plugin-config')
-          } catch { /* the widget layer may not be mounted */ }
+          var revision = String(payload.revision || '')
+          var first = lastId === null
+          var wallpaperChanged = !first && id !== lastId
+          var configChanged = lastRevision !== null && revision !== lastRevision
+          lastId = id
+          lastRevision = revision
+          if (wallpaperChanged) {
+            try {
+              var api = window.__dshDesktopWidgets
+              if (api && api.resample) api.resample('plugin-config')
+            } catch { /* the widget layer may not be mounted */ }
+          }
+          if (configChanged && window.__dshDesktopMode && typeof window.__dshDesktopMode.reloadWidgets === 'function') {
+            window.__dshDesktopMode.reloadWidgets('config-changed')
+          }
         })
         .catch(function () { /* host gone: the page keeps its last palette */ })
     }, 3000)

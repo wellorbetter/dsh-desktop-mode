@@ -231,6 +231,26 @@ function readText(file) {
   try { return fs.readFileSync(file, 'utf8') } catch { return '' }
 }
 
+/**
+ * Identity of the stored configuration as the page sees it.
+ *
+ * mtime + size rather than a counter: nothing has to be persisted, a hand edit of
+ * `widgets.json` counts, and an explicit reload only has to bump the counter
+ * below — the page notices within one poll and re-renders the layer itself.
+ */
+let reloadCounter = 0
+
+function configRevision() {
+  let file = ''
+  try {
+    const stat = fs.statSync(userConfigPath())
+    file = `${Math.round(stat.mtimeMs)}:${stat.size}`
+  } catch {
+    file = ''
+  }
+  return `${file}:${reloadCounter}`
+}
+
 function sendText(res, contentType, body) {
   res.writeHead(200, {
     'Content-Type': contentType,
@@ -418,6 +438,26 @@ export default {
         }
       }))
 
+      // Ask the pages to rebuild the widget layer now.
+      //
+      // The tray and the launcher live outside the install directory and cannot
+      // know which configuration file the plugin serves, so "reload widgets" is a
+      // request to the plugin rather than a touch of some guessed path. The page
+      // sees the new revision on its next poll and re-renders.
+      disposers.push(ctx.webServer.register({
+        kind: 'exact',
+        path: `${PUBLIC_BASE}/reload`,
+        handler: (req, res) => {
+          if ((req.method || 'GET').toUpperCase() !== 'POST') {
+            sendJson(res, 405, { ok: false, error: 'method not allowed' })
+            return
+          }
+          if (refuseForeignRequest(req, res)) return
+          reloadCounter += 1
+          sendJson(res, 200, { ok: true, revision: configRevision(), configPath: userConfigPath() })
+        }
+      }))
+
       // The wallpaper plugin persists the current wallpaper id in its own config,
       // port-independently. The old injection daemon watched that file on the host
       // side; the plugin keeps the same capability by letting the page poll this
@@ -432,7 +472,7 @@ export default {
             const raw = fs.readFileSync(path.join(os.homedir(), '.dsh-wallpaper-engine', 'config.json'), 'utf8')
             id = String(JSON.parse(raw)?.settings?.id ?? '')
           } catch { id = '' }
-          sendJson(res, 200, { ok: true, id })
+          sendJson(res, 200, { ok: true, id, revision: configRevision() })
         }
       }))
 

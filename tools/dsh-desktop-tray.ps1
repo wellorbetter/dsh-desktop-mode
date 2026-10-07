@@ -55,7 +55,7 @@ $statusItem.add_Click({
   } catch { Show-Balloon -Title '状态查询失败' -Text "$_" -Icon Error }
 })
 
-$reloadItem = $menu.Items.Add('重载挂件（读 config/widgets.json）')
+$reloadItem = $menu.Items.Add('重载挂件')
 $reloadItem.add_Click({
   try {
     $output = Invoke-Launcher @('widgets-reload')

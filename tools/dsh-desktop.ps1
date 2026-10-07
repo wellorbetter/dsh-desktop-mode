@@ -530,6 +530,45 @@ function Wait-WidgetState {
   return $null
 }
 
+# Wait until the page reports another *render* of the widget layer.
+#
+# The layer is a singleton module: a configuration change makes it tear its root
+# element down and build it again, so `renders` is the only observable that says
+# the page noticed. (The module's instance id is constant — waiting on it, as an
+# earlier version did, could never succeed.)
+function Wait-WidgetRenderChange {
+  param([int]$Previous = -1, [int]$Attempts = 15, [int]$DelayMs = 1000)
+  for ($i = 0; $i -lt $Attempts; $i++) {
+    Start-Sleep -Milliseconds $DelayMs
+    $state = Get-WidgetState
+    if (-not $state) { continue }
+    if ($null -ne $state.renders -and [int]$state.renders -gt $Previous) { return $state }
+  }
+  return $null
+}
+
+# Wait for the layer to reach a wanted mounted state.
+#
+# Switching the layer off tears its root element down without rendering again, so
+# the render counter cannot observe it; the mounted flag can, in both directions.
+function Wait-WidgetMounted {
+  param([bool]$Mounted = $true, [int]$Attempts = 20, [int]$DelayMs = 1000)
+  for ($i = 0; $i -lt $Attempts; $i++) {
+    Start-Sleep -Milliseconds $DelayMs
+    $state = Get-WidgetState
+    if ($state -and [bool]$state.mounted -eq $Mounted) { return $state }
+  }
+  return $null
+}
+
+# Turn the widget layer on/off through the plugin's own configuration.
+#
+# The legacy path stopped a daemon; with the plugin the layer's switch lives in
+# the configuration the page already polls, and only the plugin knows where that
+# file is (see Set-PluginWidgetEnabled below), so there is no file path here any
+# more — a launcher-side guess was exactly the bug that made "the layer did not
+# mount" unobservable.
+
 # The shell reparents its window as a WS_CHILD but leaves the title bar/border
 # styles on, so the client area is smaller than the desktop (measured 2544x1401
 # on a 2560x1440 screen) and the leftover strip looks like a frame around the
@@ -562,8 +601,44 @@ function Invoke-FillDesktopLayer {
 }
 
 function Get-WidgetConfig {
+  # The plugin is the authority on where its configuration lives: it serves it at
+  # /settings regardless of which layout this launcher runs from. Reading a path
+  # guess instead used to make the "the layer did not mount" guard dead code.
+  $live = Get-PluginSettings
+  if ($live -and $live.ok -eq $true -and $live.config) { return $live.config }
   if (-not (Test-Path $widgetConfigPath)) { return $null }
   try { return Get-Content $widgetConfigPath -Raw | ConvertFrom-Json } catch { return $null }
+}
+
+function Get-PluginSettings {
+  try {
+    $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/dsh-desktop-mode/settings" -UseBasicParsing -TimeoutSec 15
+    return $response.Content | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+}
+
+# Every mutating plugin route requires this header (plugin routes are not behind
+# the instance token, so the endpoint checks its caller itself).
+$pluginHeaders = @{ 'X-DSH-Desktop-Mode' = '1' }
+
+function Set-PluginWidgetEnabled {
+  param([bool]$Enabled)
+  $body = @{ patch = @{ enabled = $Enabled } } | ConvertTo-Json -Depth 6
+  $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/dsh-desktop-mode/settings" -Method POST -Headers $pluginHeaders `
+    -ContentType 'application/json' -Body $body -UseBasicParsing -TimeoutSec 30
+  $payload = $response.Content | ConvertFrom-Json
+  if ($payload.ok -ne $true) { throw "the plugin refused the change: $($response.Content)" }
+  return $payload.config
+}
+
+function Request-PluginWidgetReload {
+  $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/dsh-desktop-mode/reload" -Method POST -Headers $pluginHeaders `
+    -ContentType 'application/json' -Body '{}' -UseBasicParsing -TimeoutSec 30
+  $payload = $response.Content | ConvertFrom-Json
+  if ($payload.ok -ne $true) { throw "the plugin refused the reload: $($response.Content)" }
+  return $payload
 }
 
 function Get-TrayProcess {
@@ -620,21 +695,24 @@ function Enable-DesktopLayer {
   if (-not $attach -or $attach.ok -ne $true) {
     throw "could not pin the shell window to the desktop: $($attach | ConvertTo-Json -Compress)"
   }
-  # The page-render check is our own CDP probe (not the shell's IPC): a freshly
-  # launched shell may still be booting its plugin bundles. Measured: with the
-  # plugin's own client bundle in the boot graph this took past 30s, and giving up
-  # early used to detach a perfectly healthy layer.
+  # Page-render check: advisory, never a rollback trigger.
+  #
+  # Measured: on this machine the shell can take minutes to finish booting ~70
+  # plugin bundles, and the CDP probe itself times out while the page's JS is
+  # busy (each attempt costs its own timeout). Attaching already proved the window
+  # exists, so a slow page is reported rather than punished — rolling back here
+  # detached a healthy layer and left the desktop ordinary-looking but dead.
   $page = $null
-  for ($i = 0; $i -lt 90; $i++) {
-    $page = Invoke-Bridge @('page', '--timeout', '20000') -AllowFailure
+  for ($i = 0; $i -lt 15; $i++) {
+    $page = Invoke-Bridge @('page', '--timeout', '8000') -AllowFailure
     if ($page -and $page.hasComposer -and $page.hasSidebar) { break }
-    if ($i -eq 30) { Write-Host 'the shell page is still booting…' }
-    Start-Sleep -Seconds 1
+    Start-Sleep -Seconds 2
   }
-  if (-not $page -or -not $page.hasComposer -or -not $page.hasSidebar) {
-    throw "the shell page is not rendering the DSH UI (href=$($page.href), title=$($page.title))"
+  if ($page -and $page.hasComposer -and $page.hasSidebar) {
+    Write-Host "desktop layer attached: $($attach.parentClass), page '$($page.title)'"
+  } else {
+    Write-Warning "desktop layer attached: $($attach.parentClass), but the page had not finished rendering when checked (href=$($page.href), title=$($page.title)); it normally completes on its own"
   }
-  Write-Host "desktop layer attached: $($attach.parentClass), page '$($page.title)'"
   return $attach
 }
 
@@ -737,7 +815,7 @@ switch ($Action) {
       throw
     }
     Start-Tray
-    Write-Host 'DSH desktop layer is running. Undo with: stop-dsh-desktop.cmd'
+    Write-Host 'DSH desktop layer is running. Undo with: dsh-desktop.ps1 stop'
   }
   'stop' {
     Restore-TypingLayer | Out-Null
@@ -755,7 +833,7 @@ switch ($Action) {
     $result = Invoke-InputTool -ToolArgs @('promote', '--root', $projectRoot, '--force') -AllowFailure
     if ($result.ok -ne $true) { throw "could not leave the desktop layer: $($result | ConvertTo-Json -Compress)" }
     Write-Host "popped out to a normal window — typing works now (keyboard: $($result.foreground))"
-    Write-Host 'put it back with: re-attach-dsh-desktop.cmd'
+    Write-Host 'put it back with: dsh-desktop.ps1 re-attach'
   }
   're-attach' {
     $state = Restore-TypingLayer
@@ -797,10 +875,23 @@ switch ($Action) {
   'fill-check' {
     Invoke-FillDesktopLayer -WhatIf | ConvertTo-Json -Depth 6
   }
-  'widgets-on' {    Start-WidgetDaemon | Out-Null
-    $state = Wait-WidgetState
-    if ($state -and -not $state.mounted) { throw 'widget layer did not mount' }
-    Write-Host 'widget layer on'
+  'widgets-on' {
+    if (Test-DesktopPluginInstalled) {
+      # The plugin owns the widget layer. Starting the injection daemon as well
+      # would race it — and in an install layout the daemon cannot even find its
+      # files (it wants <root>\config\widgets.json and <root>\widgets\), so it
+      # would exit immediately and the state read below would report the plugin's
+      # layer as if the daemon had produced it.
+      Set-PluginWidgetEnabled -Enabled $true | Out-Null
+      $state = Wait-WidgetMounted -Mounted $true
+      if ($null -eq $state) { throw "the plugin's widget layer is still not mounted after 20s (the page polls every 3s)" }
+      Write-Host "widget layer on (enabled in the plugin's configuration, renders $($state.renders))"
+    } else {
+      Start-WidgetDaemon | Out-Null
+      $state = Wait-WidgetState
+      if ($state -and -not $state.mounted) { throw 'widget layer did not mount' }
+      Write-Host 'widget layer on (injection daemon)'
+    }
   }
   'widgets-resample' {
     $result = Invoke-Widgets -Mode 'resample'
@@ -811,24 +902,44 @@ switch ($Action) {
     }
   }
   'widgets-off' {
-    Stop-WidgetDaemon
-    Invoke-Widgets -Mode 'off' | Out-Null
-    Write-Host 'widget layer off (stays off across reloads)'
+    if (Test-DesktopPluginInstalled) {
+      Set-PluginWidgetEnabled -Enabled $false | Out-Null
+      $state = Wait-WidgetMounted -Mounted $false
+      if ($null -eq $state) { Write-Warning 'the page has not taken the layer down yet; it does so within one poll (~3s)' }
+      Write-Host 'widget layer off (disabled in the plugin configuration; it stays off across reloads)'
+    } else {
+      Stop-WidgetDaemon
+      Invoke-Widgets -Mode 'off' | Out-Null
+      Write-Host 'widget layer off (stays off across reloads)'
+    }
   }
   'widgets-reload' {
-    $daemon = Get-WidgetDaemonProcess
-    if ($daemon) {
-      # The daemon watches the files and re-applies within ~2s.
-      Start-Sleep -Seconds 3
-      $state = Get-WidgetState
-      if ($null -eq $state) { throw 'widget layer state unreadable' }
-      if (-not $state.mounted) { throw 'widget layer did not mount after reload' }
-      Write-Host "widget layer reloaded by daemon (instance $($state.instanceId))"
+    if (Test-DesktopPluginInstalled) {
+      # The pages poll the plugin for the configuration's identity every 3s and
+      # rebuild the layer themselves, so a reload is a request to the plugin —
+      # nothing here touches the debug port or guesses a configuration path.
+      $before = Get-WidgetState
+      $renders = if ($before -and $null -ne $before.renders) { [int]$before.renders } else { -1 }
+      $null = Request-PluginWidgetReload
+      $after = Wait-WidgetRenderChange -Previous $renders
+      if ($null -eq $after) { throw "the page did not rebuild the widget layer within 15s (renders stayed $renders)" }
+      if ($after.mounted -ne $true) { throw "the widget layer did not mount after the reload (renders $renders -> $($after.renders))" }
+      Write-Host "widget layer reloaded by the page (renders $renders -> $($after.renders))"
     } else {
-      $result = Invoke-Widgets -Mode 'apply'
-      if ($null -eq $result.state) { throw "widget layer state unreadable: $($result.raw)" }
-      if (-not $result.state.mounted) { throw "widget layer did not mount: $($result | ConvertTo-Json -Compress)" }
-      Write-Host "widget layer reloaded (instance $($result.state.instanceId), no daemon running)"
+      $daemon = Get-WidgetDaemonProcess
+      if ($daemon) {
+        # The daemon watches the files and re-applies within ~2s.
+        Start-Sleep -Seconds 3
+        $state = Get-WidgetState
+        if ($null -eq $state) { throw 'widget layer state unreadable' }
+        if (-not $state.mounted) { throw 'widget layer did not mount after reload' }
+        Write-Host "widget layer reloaded by daemon (instance $($state.instanceId))"
+      } else {
+        $result = Invoke-Widgets -Mode 'apply'
+        if ($null -eq $result.state) { throw "widget layer state unreadable: $($result.raw)" }
+        if (-not $result.state.mounted) { throw "widget layer did not mount: $($result | ConvertTo-Json -Compress)" }
+        Write-Host "widget layer reloaded (instance $($result.state.instanceId), no daemon running)"
+      }
     }
   }
   'restore-icons' {

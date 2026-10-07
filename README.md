@@ -21,7 +21,7 @@
 ## 安装
 
 1. 从 Releases 下载 `dsh-desktop-mode-v<版本>.zip` 并解压；
-2. 双击 `install.cmd`（或 `pwsh -File install.ps1`）。它会：
+2. 双击解压出来的 `host\install.cmd`（或 `pwsh -File host\install.ps1`）——**注意在 `host\` 子目录里**。它会：
    - 找到宿主 App（找不到会提示，或用 `-ShellExe "<exe 路径>"` 指定）；
    - 把工具装到 `%LOCALAPPDATA%\dsh-desktop-mode`；
    - 装插件（默认走 npm；离线或本地开发用 `-FromLocal`）；
@@ -62,11 +62,12 @@
 
 ## 开发
 
-- **插件**：`plugin/` —— host `lib/index.js`、client `lib/client.js`、挂件 `lib/widgets/`、打字 `lib/typing.js`。
+- **插件**：`plugin/` —— host `lib/index.js`、client `lib/client.js`、挂件 `lib/widgets/`、打字 `lib/typing.js`、设置页 `lib/settings-page.js`。
   本地安装：`dsh plugin --profile web add link:<本目录绝对路径>`。
 - **原生工具**：`tools/native/dsh-desktop-input.cs`，用 `tools/build-input-helper.ps1` 编译（本机只有 .NET Framework 的 csc，所以源码是 C# 5 语法：没有元组、没有 `out var`、没有字符串插值）。
+- **托盘图标**：`tools/make-icon.ps1` 现场生成 `tools/bin/dsh-desktop.ico`（自制，不含第三方素材）。
 - **发行包**：`pwsh -File packaging/build-release.ps1` —— 会先编译原生工具，再复制 `host/` `tools/` `plugin/`，并**断言**包里没有 `shell/` `logs/` `state/` `.evidence/`。
-- **架构与分步计划**：`state/dsh-plugin-package.md`。
+- **测试**：`node test/widget-config.mjs` —— 挂件配置的校验契约（44 个字段的合法性、夹取、阈值对调等）。`node tools/clear-composer.mjs` 清空桌面实例输入框（DSH 的输入框是 React 管的，改 DOM 或发合成事件都会被它改回来，只有真按键才算）。
 
 ## 许可证
 
