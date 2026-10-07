@@ -3,7 +3,7 @@
   "onlyOnNewSession": false,
   "onlyOnNewSession_comment": "false = 挂件一直在桌面上（桌面本来就该一直有时钟）。true = 只在新会话显示，恢复会话时整层隐藏。",
 
-  "enabled_comment": "这个文件就是 DSH 桌面模式的挂件配置：安装后位于 <安装目录>\\widgets.json，插件在页面加载时读取它。改完刷新页面即可生效（设置页在计划中）。JSON 不支持注释，说明都写在 *_comment 字段里。",
+  "enabled_comment": "这个文件就是 DSH 桌面模式的挂件配置：安装后位于 <安装目录>\\widgets.json，插件在页面加载时读取它。最好的改法是在 DSH 的设置窗口里改「桌面挂件」那一页（保存后挂件立刻重画）；直接改这个文件也行，改完刷新页面生效。JSON 不支持注释，说明都写在 *_comment 字段里。",
 
   "clock": {
     "enabled": true,
