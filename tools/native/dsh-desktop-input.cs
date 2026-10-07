@@ -355,6 +355,16 @@ internal static class DshDesktopInput
 
 		if (target == IntPtr.Zero) return Emit("{\"ok\":false,\"error\":\"DSH_INPUT_SHELL_WINDOW_NOT_FOUND\"}", false);
 
+		// Remember who owned the foreground before we took it.
+		//
+		// Leaving the desktop layer hands the keyboard to the desktop, which is not
+		// where the user was: a promote triggered by a click in the layer displaces
+		// whatever window had focus, and demote is a separate process invocation, so
+		// the answer has to be persisted. Restoring it on demote is what makes
+		// "click the desktop, type, click away" leave the user where they started.
+		var displaced = grabKeyboard ? GetForegroundWindow() : IntPtr.Zero;
+		if (displaced == target) displaced = IntPtr.Zero;
+
 		var monitor = MonitorBounds(target);
 		var style = GetStyle(target);
 		// A previous run killed mid-transition could have left redraw off.
@@ -416,6 +426,8 @@ internal static class DshDesktopInput
 		payload.Append(",\"styleBefore\":").Append(Json(Hex(style)));
 		payload.Append(",\"styleAfter\":").Append(Json(Hex(GetStyle(target))));
 		payload.Append(",\"keepBelow\":").Append(keepBelow ? "true" : "false");
+		payload.Append(",\"displaced\":").Append(Handle(displaced));
+		payload.Append(",\"displacedClass\":").Append(Json(displaced != IntPtr.Zero ? ClassName(displaced) : ""));
 		payload.Append(",\"mask\":").Append(mask != IntPtr.Zero ? "true" : "false");
 		payload.Append(",\"error\":").Append(Json(focused ? "" : "DSH_INPUT_FOCUS_FAILED"));
 		payload.Append("}");
@@ -460,19 +472,36 @@ internal static class DshDesktopInput
 		}
 		ReleaseFreezeMask(mask, maskDc, maskBitmap, maskOldBitmap);
 
-		// A child of the desktop view can never own the foreground: hand it back to
-		// the desktop so the next click behaves like a normal desktop click.
+		// A child of the desktop view can never own the foreground. Prefer handing it
+		// back to whoever had it before the promote (the window the user was actually
+		// in); fall back to the desktop so the next click behaves like a normal
+		// desktop click.
 		var handed = false;
+		var restoredTo = "";
 		var hadForeground = GetForegroundWindow() == target;
 		if (hadForeground)
 		{
-			var hostWindow = host != IntPtr.Zero ? host : GetDesktopWindow();
-			uint ignoredPid;
-			var foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out ignoredPid);
-			var me = GetCurrentThreadId();
-			var attached = foregroundThread != 0 && foregroundThread != me && AttachThreadInput(me, foregroundThread, true);
-			try { handed = SetForegroundWindow(hostWindow); }
-			finally { if (attached) AttachThreadInput(me, foregroundThread, false); }
+			var displaced = ParseHandle(FieldOf(ReadState(), "displaced"));
+			if (displaced != IntPtr.Zero && displaced != target && IsWindow(displaced))
+			{
+				GrabKeyboard(displaced);
+				if (GetForegroundWindow() == displaced)
+				{
+					handed = true;
+					restoredTo = ClassName(displaced);
+				}
+			}
+			if (!handed)
+			{
+				var hostWindow = host != IntPtr.Zero ? host : GetDesktopWindow();
+				uint ignoredPid;
+				var foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out ignoredPid);
+				var me = GetCurrentThreadId();
+				var attached = foregroundThread != 0 && foregroundThread != me && AttachThreadInput(me, foregroundThread, true);
+				try { handed = SetForegroundWindow(hostWindow); }
+				finally { if (attached) AttachThreadInput(me, foregroundThread, false); }
+				if (handed) restoredTo = ClassName(hostWindow);
+			}
 		}
 
 		var attachedBack = GetParent(target) == defView;
@@ -485,6 +514,7 @@ internal static class DshDesktopInput
 		payload.Append(",\"clientSize\":").Append(Json((after.Right - after.Left) + "x" + (after.Bottom - after.Top)));
 		payload.Append(",\"expectedSize\":").Append(Json((size.Right - size.Left) + "x" + (size.Bottom - size.Top)));
 		payload.Append(",\"foregroundHandedBack\":").Append(handed ? "true" : "false");
+		payload.Append(",\"restoredTo\":").Append(Json(restoredTo));
 		payload.Append(",\"mask\":").Append(mask != IntPtr.Zero ? "true" : "false");
 		payload.Append(",\"error\":").Append(Json(attachedBack ? "" : "DSH_INPUT_DEMOTE_FAILED"));
 		payload.Append("}");
@@ -1115,6 +1145,22 @@ internal static class DshDesktopInput
 			return File.ReadAllText(statePath).Trim();
 		}
 		catch { return ""; }
+	}
+
+	/// Read one quoted string field out of the state document.
+	///
+	/// The state file is a single line this tool writes itself, so a tiny scan is
+	/// enough and keeps the helper free of a JSON dependency (it is compiled by the
+	/// in-box csc against .NET Framework).
+	private static string FieldOf(string json, string name)
+	{
+		if (string.IsNullOrEmpty(json)) return "";
+		var key = "\"" + name + "\":\"";
+		var start = json.IndexOf(key, StringComparison.Ordinal);
+		if (start < 0) return "";
+		start += key.Length;
+		var end = json.IndexOf('"', start);
+		return end < 0 ? "" : json.Substring(start, end - start);
 	}
 
 	private static int Emit(string json, bool ok)
