@@ -65,7 +65,8 @@ Everything runs locally: the plugin's routes serve the local page only (`127.0.0
 - **Plugin**: `plugin/` — host `lib/index.js`, client `lib/client.js`, widgets `lib/widgets/`, typing `lib/typing.js`.
   Local install: `dsh plugin --profile web add link:<absolute path>`.
 - **Native tool**: `tools/native/dsh-desktop-input.cs`, built by `tools/build-input-helper.ps1` (the in-box .NET Framework compiler is C# 5, so the source avoids tuples, `out var` and string interpolation).
-- **Release**: `pwsh -File packaging/build-release.ps1` — compiles the tool, copies `host/` `tools/` `plugin/`, and **asserts** the package contains no `shell/`, `logs/`, `state/` or `.evidence/`.
+- **Release**: pwsh -File packaging/build-release.ps1 — compiles the tool, copies host/ 	ools/ plugin/, and **asserts** the package contains no shell/, logs/, state/ or .evidence/.
+- **Release process**: see [RELEASING.md](RELEASING.md) (where the version lives, both channels, and the `packaging/verify-release.ps1` gate plus the live checklist).
 - **Tray icon**: `tools/make-icon.ps1` generates `tools/bin/dsh-desktop.ico` (self-made, no third-party asset).
 - **Tests**: `node test/widget-config.mjs` - the widget-configuration validation contract.
 

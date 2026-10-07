@@ -67,6 +67,7 @@
 - **原生工具**：`tools/native/dsh-desktop-input.cs`，用 `tools/build-input-helper.ps1` 编译（本机只有 .NET Framework 的 csc，所以源码是 C# 5 语法：没有元组、没有 `out var`、没有字符串插值）。
 - **托盘图标**：`tools/make-icon.ps1` 现场生成 `tools/bin/dsh-desktop.ico`（自制，不含第三方素材）。
 - **发行包**：`pwsh -File packaging/build-release.ps1` —— 会先编译原生工具，再复制 `host/` `tools/` `plugin/`，并**断言**包里没有 `shell/` `logs/` `state/` `.evidence/`。
+- **发版流程**：见 [RELEASING.md](RELEASING.md)（版本号在哪、两个渠道怎么发、发前必跑 `packaging/verify-release.ps1` 与手工验收清单）。
 - **测试**：`node test/widget-config.mjs` —— 挂件配置的校验契约（44 个字段的合法性、夹取、阈值对调等）。`node tools/clear-composer.mjs` 清空桌面实例输入框（DSH 的输入框是 React 管的，改 DOM 或发合成事件都会被它改回来，只有真按键才算）。
 
 ## 许可证
