@@ -26,5 +26,15 @@
       "patch": "./cordis.patch.yml"
     }
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wellorbetter/dsh-desktop-mode.git",
+    "directory": "plugin"
+  },
+  "homepage": "https://github.com/wellorbetter/dsh-desktop-mode#readme",
+  "bugs": {
+    "url": "https://github.com/wellorbetter/dsh-desktop-mode/issues"
+  },
+  "author": "wellorbetter",
   "license": "MIT"
 }
