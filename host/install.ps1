@@ -48,6 +48,13 @@ if (-not (Test-Path $launcherSource)) {
 }
 $pluginSource = Join-Path $releaseRoot 'plugin'
 $dshCommand = Join-Path $env:USERPROFILE '.local\bin\dsh.cmd'
+# Some environments (an agent session, a service, a fresh shell) do not have the
+# harness bin directory on PATH, and this script is routinely run from exactly
+# such a context; fall back to resolving `dsh` normally before giving up.
+if (-not (Test-Path $dshCommand)) {
+  $resolved = Get-Command dsh -ErrorAction SilentlyContinue
+  if ($resolved) { $dshCommand = $resolved.Source } else { $dshCommand = '' }
+}
 if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA 'dsh-desktop-mode' }
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runValueName = 'DshDesktopLayer'
@@ -155,7 +162,13 @@ if ($PSCmdlet.ShouldProcess($InstallDir, '写 config.json')) {
 }
 
 # ------------------------------------------------------------------ 插件 --
-$pluginSpec = if ($FromLocal -and (Test-Path $pluginSource)) { "link:$pluginSource" } else { 'dsh-plugin-desktop-mode' }
+# `-FromLocal` links the plugin into the profile. Link the *installed* copy, not
+# the directory this script was run from: people install from their Downloads
+# folder and delete the archive afterwards, which would break a link pointing back
+# into it (the payload copy above already put a durable copy in the install dir).
+$installedPlugin = Join-Path $InstallDir 'plugin'
+$pluginLinkSource = if (Test-Path (Join-Path $installedPlugin 'package.json')) { $installedPlugin } else { $pluginSource }
+$pluginSpec = if ($FromLocal -and (Test-Path $pluginLinkSource)) { "link:$pluginLinkSource" } else { 'dsh-plugin-desktop-mode' }
 Say "  安装插件：dsh plugin --profile web add $pluginSpec"
 if ($PSCmdlet.ShouldProcess('profile web', "安装插件 $pluginSpec")) {
   & $dshCommand plugin --profile web add $pluginSpec 2>&1 | ForEach-Object { "    $_" }
@@ -168,7 +181,7 @@ if ($PSCmdlet.ShouldProcess('profile web', "安装插件 $pluginSpec")) {
   if (-not $installed) {
     if ($pluginSpec -ne 'dsh-plugin-desktop-mode') { throw '插件安装后未出现在 profile 依赖里' }
     Say '  npm 安装未生效，退回本地 link 安装…'
-    & $dshCommand plugin --profile web add "link:$pluginSource" 2>&1 | ForEach-Object { "    $_" }
+    & $dshCommand plugin --profile web add "link:$pluginLinkSource" 2>&1 | ForEach-Object { "    $_" }
   }
 }
 
@@ -189,7 +202,14 @@ if ($PSCmdlet.ShouldProcess($InstallDir, '冒烟检查')) {
   $tool = Join-Path $InstallDir 'tools\bin\dsh-desktop-input.exe'
   if (Test-Path $tool) {
     $smoke = & $tool status --exe $resolvedShell 2>&1 | Select-Object -Last 1
-    Say "  工具自检：$smoke"
+    if ("$smoke" -match 'DSH_INPUT_SHELL_WINDOW_NOT_FOUND') {
+      # The layer is not running yet (a fresh install, or -SkipStart), and the tool
+      # can only identify the shell window while it exists. Not a failure — say so
+      # instead of printing a JSON payload that reads like one.
+      Say '  工具自检：宿主未运行，跳过（start 之后自然生效）'
+    } else {
+      Say "  工具自检：$smoke"
+    }
   } else {
     Say '  提示：原生工具未随包提供，可运行 tools\build-input-helper.ps1 现场编译'
   }
