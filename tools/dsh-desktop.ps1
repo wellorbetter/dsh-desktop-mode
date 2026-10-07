@@ -88,7 +88,16 @@ $shellExe = Join-Path $projectRoot 'shell\app\DeepSeek Harness桌面版.exe'
 # and the desktop app (the window host) lives wherever the user already had it, so
 # it cannot be inferred from our own location any more. The repo layout has no such
 # file and keeps the default above.
+#
+# If this copy has no config.json — the development tree, or the launcher run from
+# the extracted archive — fall back to the installed one: otherwise this script
+# looks for a shell that is not running and reports an empty status while the
+# installed instance is right there.
 $hostConfigPath = Join-Path $projectRoot 'config.json'
+if (-not (Test-Path $hostConfigPath)) {
+  $installedConfig = Join-Path (Join-Path $env:LOCALAPPDATA 'dsh-desktop-mode') 'config.json'
+  if (Test-Path $installedConfig) { $hostConfigPath = $installedConfig }
+}
 $hostConfig = $null
 if (Test-Path $hostConfigPath) {
   try { $hostConfig = Get-Content $hostConfigPath -Raw | ConvertFrom-Json } catch { $hostConfig = $null }
