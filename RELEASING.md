@@ -58,10 +58,12 @@ pwsh -File packaging/verify-release.ps1
 ## GitHub Release
 
 1. 打 tag：`git tag v<版本>` 并 `git push origin main --tags`；
-2. 建 Release，标题 `v<版本>`，正文写：新增/修复要点、**已知限制**（例如需要宿主 App、需要 Windows）、安装三步；
+2. 建 Release，标题 `v<版本>`，正文用 `docs/release-notes/v<版本>.md`（里面已写好"有什么 / 安装 / 已知限制 / 校验方法"，发布时把 `sha256 = <发布时填入>` 换成 `dist\SHA256SUMS.txt` 里的值）；
 3. **附件同时传 `dsh-desktop-mode-v<版本>.zip` 和 `SHA256SUMS.txt`** —— 校验和单独上传，用户才能核对下载物；
-4. Release 正文里给出校验方法：
+4. 正文里给出校验方法：
    `Get-FileHash .\dsh-desktop-mode-v<版本>.zip -Algorithm SHA256`。
+
+> 发布前已核实（2026-10-08，只读）：npm 上 `dsh-plugin-desktop-mode` **未被占用**（registry 404），GitHub 上 `wellorbetter/dsh-desktop-mode` **未被占用**（API 404，且 `wellorbetter` 账号存在、id 与 git config 里的邮箱一致）。
 
 ## npm
 
