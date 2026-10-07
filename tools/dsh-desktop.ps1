@@ -100,7 +100,12 @@ $trayScript = Join-Path $PSScriptRoot 'dsh-desktop-tray.ps1'
 $fillTool = Join-Path $PSScriptRoot 'fill-desktop-layer.ps1'
 $inputTool = Join-Path $PSScriptRoot 'bin\dsh-desktop-input.exe'
 $iconTool = Join-Path $PSScriptRoot 'restore-desktop-icons.ps1'
-$widgetConfig = Join-Path $projectRoot 'config\widgets.json'
+$widgetConfigPath = Join-Path $projectRoot 'config\widgets.json'
+# An installed copy has no config\ directory: the plugin keeps the user's widget
+# configuration next to itself and serves it to the page. Reading the wrong path
+# here used to make the "the layer did not mount" guard dead code, so a broken
+# start reported success.
+if (-not (Test-Path $widgetConfigPath)) { $widgetConfigPath = Join-Path $projectRoot 'widgets.json' }
 $logDir = Join-Path $projectRoot 'logs'
 $webLog = Join-Path $logDir "dsh-web-$Port.log"
 $webErrLog = Join-Path $logDir "dsh-web-$Port.err.log"
@@ -557,8 +562,8 @@ function Invoke-FillDesktopLayer {
 }
 
 function Get-WidgetConfig {
-  if (-not (Test-Path $widgetConfig)) { return $null }
-  try { return Get-Content $widgetConfig -Raw | ConvertFrom-Json } catch { return $null }
+  if (-not (Test-Path $widgetConfigPath)) { return $null }
+  try { return Get-Content $widgetConfigPath -Raw | ConvertFrom-Json } catch { return $null }
 }
 
 function Get-TrayProcess {
@@ -616,11 +621,14 @@ function Enable-DesktopLayer {
     throw "could not pin the shell window to the desktop: $($attach | ConvertTo-Json -Compress)"
   }
   # The page-render check is our own CDP probe (not the shell's IPC): a freshly
-  # launched shell may still be booting its plugin bundles.
+  # launched shell may still be booting its plugin bundles. Measured: with the
+  # plugin's own client bundle in the boot graph this took past 30s, and giving up
+  # early used to detach a perfectly healthy layer.
   $page = $null
-  for ($i = 0; $i -lt 30; $i++) {
+  for ($i = 0; $i -lt 90; $i++) {
     $page = Invoke-Bridge @('page', '--timeout', '20000') -AllowFailure
     if ($page -and $page.hasComposer -and $page.hasSidebar) { break }
+    if ($i -eq 30) { Write-Host 'the shell page is still booting…' }
     Start-Sleep -Seconds 1
   }
   if (-not $page -or -not $page.hasComposer -or -not $page.hasSidebar) {
@@ -688,7 +696,7 @@ switch ($Action) {
       } else {
         Write-Warning "desktop layer may not fill the screen: $($fill.error) $($fill.raw)"
       }
-      $widgetConfig = Get-WidgetConfig
+      $widgetSettings = Get-WidgetConfig
       if (Test-DesktopPluginInstalled) {
         # The plugin owns the widget layer and the typing trigger now; starting the
         # injection daemon as well would race it (the daemon's document-start
@@ -699,7 +707,7 @@ switch ($Action) {
           Write-Warning 'could not read the widget layer state; the plugin may still be loading'
         } elseif ($widgetState.mounted) {
           Write-Host "widget layer active via the plugin (instance $($widgetState.instanceId))"
-        } elseif ($widgetConfig -and $widgetConfig.enabled) {
+        } elseif ($widgetSettings -and $widgetSettings.enabled) {
           throw "the plugin's widget layer did not mount (mounted=$($widgetState.mounted), visible=$($widgetState.visible))"
         }
       } else {
@@ -711,7 +719,7 @@ switch ($Action) {
           Write-Warning 'could not read the widget layer state; continuing'
         } elseif ($widgetState.mounted) {
           Write-Host "widget layer active (instance $($widgetState.instanceId))"
-        } elseif ($widgetConfig -and $widgetConfig.enabled) {
+        } elseif ($widgetSettings -and $widgetSettings.enabled) {
           throw "widget layer did not mount (mounted=$($widgetState.mounted), visible=$($widgetState.visible))"
         } else {
           Write-Host 'widget layer disabled in config/widgets.json'

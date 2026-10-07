@@ -100,7 +100,7 @@
     note('sent', name)
     return fetch(ACTION_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-DSH-Desktop-Mode': '1' },
       body: JSON.stringify(body)
     }).then(function (response) { return response.json() }).then(function (payload) {
       state.lastResult = payload
@@ -194,10 +194,19 @@
     }
     state.mode = 'demoting'
     return action('demote', { reason: reason }).then(function (payload) {
+      if (!payload || payload.ok !== true) {
+        // Do not claim we are back on the desktop: ask the native side what is
+        // actually true, and keep the previous mode until it answers. The old
+        // code wrote "desktop / no keyboard / on the layer" unconditionally,
+        // which is exactly the kind of cached assumption this layer must not
+        // hold (a failed demote can leave the window out of the desktop).
+        note('demote-failed', (payload && payload.error) || 'no answer')
+        return verify().then(function () { return state.mode === 'desktop' })
+      }
       state.mode = 'desktop'
       state.keyboard = false
       state.onDesktopLayer = true
-      note('demoted', (payload && payload.error) || 'ok')
+      note('demoted', 'ok')
       return true
     })
   }

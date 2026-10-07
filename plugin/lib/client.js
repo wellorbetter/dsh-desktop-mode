@@ -16,6 +16,8 @@
   'use strict'
   if (window.__dshDesktopMode) return
 
+  // Client module revision, used only until /boot answers with the package
+  // version; `/boot` is the authority so the two can never disagree for long.
   var VERSION = '0.0.2'
   var BASE = '/dsh-desktop-mode'
   var ACTION_URL = BASE + '/action'
@@ -157,7 +159,7 @@
     if (extra) for (var key in extra) if (Object.prototype.hasOwnProperty.call(extra, key)) body[key] = extra[key]
     return fetch(ACTION_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-DSH-Desktop-Mode': '1' },
       body: JSON.stringify(body)
     }).then(function (response) { return response.json() }).then(function (payload) {
       state.lastAction = { action: action, payload: payload, at: Date.now() }
@@ -267,10 +269,32 @@
     },
     /** Diagnostics + next steps: ask the native side directly. */
     action: callAction,
+    /**
+     * Re-read the configuration and re-render the widget layer in place.
+     *
+     * The settings page calls this after a save: the widget code applies a whole
+     * configuration object (it stops its timers and rebuilds), so re-fetching the
+     * boot payload and handing it over is the same path a page load takes.
+     */
+    reloadWidgets: function (reason) {
+      return fetch(BASE + '/boot', { headers: { Accept: 'application/json' } })
+        .then(function (response) { return response.json() })
+        .then(function (payload) {
+          if (!payload || payload.ok !== true) throw new Error('DSH_DESKTOP_MODE_BOOT_MISSING')
+          state.boot = { version: payload.version, configPath: payload.configPath, enabled: payload.config && payload.config.enabled !== false }
+          window.__DSH_DESKTOP_WIDGETS_BOOT__ = { config: payload.config, css: payload.css }
+          var api = window.__dshDesktopWidgets
+          if (!api || typeof api.apply !== 'function') throw new Error('DSH_DESKTOP_MODE_WIDGETS_MISSING')
+          api.apply(payload.config)
+          state.widgets = snapshotWidgets()
+          state.mounted = state.widgets !== null && state.widgets.mounted === true
+          return state.widgets
+        })
+    },
     resampleWidgets: function (reason) {
       var api = window.__dshDesktopWidgets
       return api && api.resample ? api.resample(reason || 'client-api') : null
     },
-    version: VERSION
+    version: (state.boot && state.boot.version) || VERSION
   }
 })()

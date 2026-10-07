@@ -20,6 +20,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { DEFAULT_CONFIG, describe, normalize } from './widgets/config.js'
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PUBLIC_BASE = '/dsh-desktop-mode'
@@ -32,8 +33,44 @@ function installDir() {
   return path.join(base, 'dsh-desktop-mode')
 }
 
+/** Version reported to the page: read from the package, so it cannot drift. */
+function packageVersion() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8'))
+    return typeof parsed.version === 'string' ? parsed.version : '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+}
+
+/**
+ * Where the native tool is.
+ *
+ * The plugin and the host installer must agree on this: the installer copies the
+ * packaged tree to `<install>\tools\...` (so the tool lands in `tools\bin\`) and
+ * records that path as `tool` in `config.json`, while the plugin's own default
+ * lives at the install root. Resolving the first candidate that exists means
+ * either layout works, and a fresh install does not silently lose typing.
+ */
+function toolCandidates() {
+  const candidates = []
+  const override = process.env.DSH_DESKTOP_MODE_TOOL
+  if (typeof override === 'string' && override !== '') candidates.push(override)
+  const configured = hostConfig().tool
+  if (typeof configured === 'string' && configured !== '') candidates.push(configured)
+  candidates.push(path.join(installDir(), TOOL_NAME))
+  candidates.push(path.join(installDir(), 'tools', 'bin', TOOL_NAME))
+  return candidates
+}
+
 function toolPath() {
-  return process.env.DSH_DESKTOP_MODE_TOOL || path.join(installDir(), TOOL_NAME)
+  const candidates = toolCandidates()
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate
+    } catch { /* unreadable candidate: try the next one */ }
+  }
+  return candidates[0]
 }
 
 /**
@@ -57,6 +94,36 @@ function hostConfig() {
 
 /** Actions the client half may ask for; anything else is refused. */
 const ACTIONS = new Set(['status', 'promote', 'demote', 'detach', 'focus'])
+
+/**
+ * Header the shipped client sets on every mutating request.
+ *
+ * The web server does not authenticate plugin routes, so these endpoints are
+ * reachable by any local process. Requiring a custom header makes a cross-origin
+ * page unable to reach them without a preflight this server never approves (it
+ * also makes the request non-simple, so browsers refuse to send it silently), and
+ * the loopback Host check keeps a DNS-rebound name from being treated as local.
+ */
+const CLIENT_HEADER = 'x-dsh-desktop-mode'
+
+function isLocalHost(host) {
+  const name = String(host || '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '')
+  return name === '127.0.0.1' || name === 'localhost' || name === '::1'
+}
+
+/** Guard a mutating route: refuse callers that are not our own page. */
+function refuseForeignRequest(req, res) {
+  const header = req.headers[CLIENT_HEADER]
+  if (header !== '1') {
+    sendJson(res, 403, { ok: false, error: 'DSH_DESKTOP_MODE_FOREIGN_REQUEST' })
+    return true
+  }
+  if (!isLocalHost(req.headers.host)) {
+    sendJson(res, 403, { ok: false, error: 'DSH_DESKTOP_MODE_FOREIGN_HOST' })
+    return true
+  }
+  return false
+}
 
 /**
  * Run the native tool and resolve its JSON ack.
@@ -105,7 +172,7 @@ function readClient() {
 const WIDGETS_DIR = path.join(PACKAGE_ROOT, 'lib', 'widgets')
 const WIDGETS_JS = path.join(WIDGETS_DIR, 'widgets.js')
 const WIDGETS_CSS = path.join(WIDGETS_DIR, 'widgets.css')
-const DEFAULT_CONFIG = path.join(WIDGETS_DIR, 'default-config.json')
+const DEFAULT_CONFIG_PATH = path.join(WIDGETS_DIR, 'default-config.json')
 const TYPING_JS = path.join(PACKAGE_ROOT, 'lib', 'typing.js')
 
 /**
@@ -123,17 +190,41 @@ function readJsonFile(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return null }
 }
 
-/** User config if present, else the shipped default; seeded on first boot. */
+/** The configuration the page is served: shipped default ⊕ the user's file, normalized. */
 function widgetConfig() {
+  const shipped = readJsonFile(DEFAULT_CONFIG_PATH) ?? DEFAULT_CONFIG
   const userPath = userConfigPath()
   const user = readJsonFile(userPath)
-  if (user !== null) return user
-  const shipped = readJsonFile(DEFAULT_CONFIG) ?? {}
-  try {
-    fs.mkdirSync(path.dirname(userPath), { recursive: true })
-    fs.writeFileSync(userPath, JSON.stringify(shipped, null, 2), 'utf8')
-  } catch { /* read-only install dir: fall back to the shipped default in memory */ }
-  return shipped
+  if (user === null) {
+    // First boot: seed the file so it is there to edit (by hand today, by the
+    // settings page in the same round).
+    const seeded = normalize(shipped, shipped).config
+    try {
+      fs.mkdirSync(path.dirname(userPath), { recursive: true })
+      fs.writeFileSync(userPath, `${JSON.stringify(seeded, null, 2)}\n`, 'utf8')
+    } catch { /* read-only install dir: keep serving the in-memory value */ }
+    return seeded
+  }
+  return normalize(user, shipped).config
+}
+
+/**
+ * Persist a settings patch.
+ *
+ * Writes through a temporary file and renames, so a crash mid-write cannot leave
+ * the layer with a half-written configuration; the caller gets back the value
+ * that is actually stored, which is what the page then renders.
+ */
+function saveWidgetConfig(patch) {
+  const shipped = readJsonFile(DEFAULT_CONFIG_PATH) ?? DEFAULT_CONFIG
+  const current = widgetConfig()
+  const merged = normalize(patch, current)
+  const target = userConfigPath()
+  const temp = `${target}.${process.pid}.tmp`
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  fs.writeFileSync(temp, `${JSON.stringify(merged.config, null, 2)}\n`, 'utf8')
+  fs.renameSync(temp, target)
+  return merged
 }
 
 function readText(file) {
@@ -174,6 +265,41 @@ function sendJson(res, status, payload) {
     'Content-Length': String(Buffer.byteLength(text))
   })
   res.end(text)
+}
+
+/**
+ * Read a small JSON request body.
+ *
+ * The cap is deliberate: these routes accept a settings form or an action, never
+ * a payload, so an oversized body is refused instead of buffered.
+ */
+function readJsonBody(req, res, limit, onBody) {
+  const chunks = []
+  let size = 0
+  let refused = false
+  req.on('data', (chunk) => {
+    size += chunk.length
+    if (size > limit) {
+      refused = true
+      // Answer before tearing the socket down: a client that only sees a reset
+      // cannot tell "too large" from "the layer is broken".
+      sendJson(res, 413, { ok: false, error: 'DSH_DESKTOP_MODE_BODY_TOO_LARGE', limit })
+      req.destroy()
+      return
+    }
+    chunks.push(chunk)
+  })
+  req.on('end', () => {
+    if (refused) return
+    let payload = null
+    try { payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') } catch { payload = null }
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      sendJson(res, 400, { ok: false, error: 'DSH_DESKTOP_MODE_BAD_JSON' })
+      return
+    }
+    onBody(payload)
+  })
+  req.on('error', () => sendJson(res, 400, { ok: false, error: 'DSH_DESKTOP_MODE_BAD_REQUEST' }))
 }
 
 export default {
@@ -223,10 +349,42 @@ export default {
         handler: (req, res) => {
           sendJson(res, 200, {
             ok: true,
-            version: '0.0.2',
+            version: packageVersion(),
             config: widgetConfig(),
             css: readText(WIDGETS_CSS),
             configPath: userConfigPath()
+          })
+        }
+      }))
+
+      disposers.push(ctx.webServer.register({
+        kind: 'exact',
+        path: `${PUBLIC_BASE}/settings`,
+        handler: (req, res) => {
+          const method = (req.method || 'GET').toUpperCase()
+          if (method === 'GET') {
+            const config = widgetConfig()
+            sendJson(res, 200, {
+              ok: true,
+              config,
+              configPath: userConfigPath(),
+              ...describe(config)
+            })
+            return
+          }
+          if (method !== 'POST') {
+            sendJson(res, 405, { ok: false, error: 'method not allowed' })
+            return
+          }
+          if (refuseForeignRequest(req, res)) return
+          readJsonBody(req, res, 64 * 1024, (payload) => {
+            try {
+              // `patch` merges into the stored configuration; `config` replaces it.
+              const merged = saveWidgetConfig(payload.config ?? payload.patch ?? {})
+              sendJson(res, 200, { ok: true, config: merged.config, issues: merged.issues })
+            } catch (error) {
+              sendJson(res, 500, { ok: false, error: 'DSH_DESKTOP_MODE_SAVE_FAILED', detail: String(error && error.message).slice(0, 200) })
+            }
           })
         }
       }))
@@ -289,26 +447,20 @@ export default {
             sendJson(res, 405, { ok: false, error: 'method not allowed' })
             return
           }
-          const chunks = []
-          let size = 0
-          req.on('data', (chunk) => {
-            size += chunk.length
-            if (size > 64 * 1024) { req.destroy(); return }
-            chunks.push(chunk)
-          })
-          req.on('end', async () => {
-            let payload = {}
-            try { payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') } catch { payload = {} }
+          if (refuseForeignRequest(req, res)) return
+          readJsonBody(req, res, 64 * 1024, async (payload) => {
             const action = String(payload.action || '')
             if (!ACTIONS.has(action)) {
               sendJson(res, 400, { ok: false, error: 'DSH_DESKTOP_MODE_UNKNOWN_ACTION', action })
               return
             }
+            // `--no-mask` is a cosmetic A/B switch the shipped client already uses;
+            // `--force` (bypass the foreground safety rail) is deliberately NOT
+            // reachable from here: the page never needs it, and an endpoint that
+            // any local process can reach must not be able to pull the layer out
+            // from under another application.
             const extra = []
-            if (action === 'promote') {
-              if (payload.force === true) extra.push('--force')
-              if (payload.mask === false) extra.push('--no-mask')
-            }
+            if (action === 'promote' && payload.mask === false) extra.push('--no-mask')
             sendJson(res, 200, await runNative(action, extra))
           })
           req.on('error', () => sendJson(res, 400, { ok: false, error: 'DSH_DESKTOP_MODE_BAD_REQUEST' }))
