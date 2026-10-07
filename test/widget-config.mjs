@@ -126,6 +126,15 @@ check('describe() exposes every field with its current value', () => {
   assert.ok(table.groups.some((group) => group.id === 'weather'))
 })
 
+check('a cleared number box keeps the value beneath it', () => {
+  const base = normalize({ clock: { scale: 2 } }, DEFAULT_CONFIG).config
+  const { config, issues } = normalize({ clock: { scale: '', stroke: '   ' } }, base)
+  assert.equal(config.clock.scale, 2)
+  assert.equal(config.clock.stroke, base.clock.stroke)
+  assert.equal(issues.length, 2)
+  assert.match(issues[0].reason, /empty number/)
+})
+
 check('long strings are truncated rather than stored whole', () => {
   const { config } = normalize({ caption: { text: 'x'.repeat(5000) } }, DEFAULT_CONFIG)
   assert.equal(config.caption.text.length, 200)

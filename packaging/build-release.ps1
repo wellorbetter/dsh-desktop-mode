@@ -52,7 +52,7 @@ if (-not (Test-Path $toolExe)) { throw "原生工具未就绪：$toolExe（先�
 if ($PSCmdlet.ShouldProcess($stageDir, '重建暂存目录')) {
   if (Test-Path $stageDir) { Remove-Item $stageDir -Recurse -Force }
   New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
-  foreach ($item in 'host', 'tools', 'plugin', 'README.md', 'README.en.md', 'LICENSE') {
+  foreach ($item in 'host', 'tools', 'plugin', 'README.md', 'README.en.md', 'RELEASING.md', 'LICENSE') {
     $source = Join-Path $repoRoot $item
     if (-not (Test-Path $source)) { throw "发行包缺少 $item" }
     Copy-Item $source (Join-Path $stageDir $item) -Recurse -Force

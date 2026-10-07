@@ -40,7 +40,7 @@ Your widget configuration is kept as `widgets.json.bak` unless you pass `-Purge`
 - **Typing**: click an input box on the desktop and type. `Esc`, or clicking anywhere else, puts the layer back.
   **Safety rail**: the keyboard is only ever taken when the desktop already owns the foreground — it can never steal it from a game or another application.
 - **Tray**: status · reload widgets · show/hide desktop icons · typing mode · back to the desktop layer · stop.
-- **Configuration**: `%LOCALAPPDATA%\dsh-desktop-mode\widgets.json` (clock position, caption text, weather badge, fps, character art, adaptive colour, …). Reload the page after editing.
+- **Configuration**: the DSH settings window, last page ("桌面挂件"): 44 fields in 7 groups, saved changes redraw the layer within one poll (~3s) and need no page reload. It is stored in `%LOCALAPPDATA%\dsh-desktop-mode\widgets.json` (clock position, caption text, weather badge, fps, character art, adaptive colour, …); editing that file by hand also takes effect within one poll. Nothing needs a page reload.
 - **Commands** (in the install directory): `tools\dsh-desktop.ps1` with `start` / `stop` / `status` / `typing-on` / `typing-off` / `fill` / `icons-off` / `tray-reload`.
 
 ## How it works
@@ -65,7 +65,7 @@ Everything runs locally: the plugin's routes serve the local page only (`127.0.0
 - **Plugin**: `plugin/` — host `lib/index.js`, client `lib/client.js`, widgets `lib/widgets/`, typing `lib/typing.js`.
   Local install: `dsh plugin --profile web add link:<absolute path>`.
 - **Native tool**: `tools/native/dsh-desktop-input.cs`, built by `tools/build-input-helper.ps1` (the in-box .NET Framework compiler is C# 5, so the source avoids tuples, `out var` and string interpolation).
-- **Release**: pwsh -File packaging/build-release.ps1 — compiles the tool, copies host/ 	ools/ plugin/, and **asserts** the package contains no shell/, logs/, state/ or .evidence/.
+- **Release**: `pwsh -File packaging/build-release.ps1` — compiles the tool, copies `host/` `tools/` `plugin/`, and **asserts** the package contains no `shell/`, `logs/`, `state/` or `.evidence/`.
 - **Release process**: see [RELEASING.md](RELEASING.md) (where the version lives, both channels, and the `packaging/verify-release.ps1` gate plus the live checklist).
 - **Tray icon**: `tools/make-icon.ps1` generates `tools/bin/dsh-desktop.ico` (self-made, no third-party asset).
 - **Tests**: `node test/widget-config.mjs` - the widget-configuration validation contract.

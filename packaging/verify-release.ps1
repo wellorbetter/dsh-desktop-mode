@@ -75,7 +75,7 @@ try {
     'plugin/package.json', 'plugin/cordis.patch.yml', 'plugin/lib/index.js', 'plugin/lib/client.js',
     'plugin/lib/typing.js', 'plugin/lib/settings-page.js', 'plugin/lib/widgets/widgets.js',
     'plugin/lib/widgets/widgets.css', 'plugin/lib/widgets/config.js', 'plugin/lib/widgets/default-config.json',
-    'README.md', 'README.en.md', 'LICENSE'
+    'README.md', 'README.en.md', 'RELEASING.md', 'LICENSE'
   )
   $missing = $required | Where-Object { $relative -notcontains $_ }
   Check ($missing.Count -eq 0) "every file the installer and launcher need is present$(if ($missing.Count) { " (missing: $($missing -join ', '))" })"
@@ -147,6 +147,19 @@ console.log('contract ok (' + FIELDS.length + ' fields)')
   $clientPath = "plugin/$($clientEntry -replace '^\./', '')"
   Check ($relative -contains $clientPath) "plugin exports a client bundle that exists ($clientPath)"
   Check ((Test-Path (Join-Path $temp 'plugin\cordis.patch.yml'))) 'the plugin patch file ships'
+
+  # 7. The installers actually run.
+  #
+  # Parsing is not enough: a statement accidentally merged into the previous line
+  # still parses and still fails at run time (that happened once, and it shipped
+  # into a staging zip that the parse-only gate happily approved). Both installers
+  # are run in dry-run mode against a throwaway install directory.
+  $throwaway = Join-Path $temp 'whatif-install'
+  $installOut = & pwsh -NoProfile -File (Join-Path $temp 'host\install.ps1') -WhatIf -SkipStart -InstallDir $throwaway 2>&1
+  Check ($LASTEXITCODE -eq 0) "host\install.ps1 -WhatIf runs (exit $LASTEXITCODE)$(if ($LASTEXITCODE -ne 0) { " - $($installOut | Select-Object -Last 2)" })"
+  Check (($installOut -join "`n") -match 'shellExe') 'host\install.ps1 -WhatIf resolves a host app'
+  $uninstallOut = & pwsh -NoProfile -File (Join-Path $temp 'host\uninstall.ps1') -WhatIf -InstallDir $throwaway 2>&1
+  Check ($LASTEXITCODE -eq 0) "host\uninstall.ps1 -WhatIf runs (exit $LASTEXITCODE)$(if ($LASTEXITCODE -ne 0) { " - $($uninstallOut | Select-Object -Last 2)" })"
 } finally {
   Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue
 }

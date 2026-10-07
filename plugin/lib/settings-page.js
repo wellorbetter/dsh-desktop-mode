@@ -228,6 +228,7 @@ window.__ModuleLoader__.load({
         var control
         if (field.type === 'boolean') {
           control = h('input', {
+            key: 'control',
             type: 'checkbox',
             checked: value === true,
             disabled: busy,
@@ -235,6 +236,7 @@ window.__ModuleLoader__.load({
           })
         } else if (field.type === 'enum') {
           control = h('select', {
+            key: 'control',
             className: 'dsh-dm-input',
             value: String(value === undefined || value === null ? '' : value),
             disabled: busy,
@@ -244,6 +246,7 @@ window.__ModuleLoader__.load({
           }))
         } else {
           control = h('input', {
+            key: 'control',
             className: 'dsh-dm-input',
             type: field.type === 'number' ? 'number' : 'text',
             step: field.step === undefined ? undefined : String(field.step),

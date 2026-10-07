@@ -38,8 +38,13 @@
   }
 
   const DEFAULTS = {
+    // These are the layer's own fallbacks, used only if the boot payload omits a
+    // field. They must match the plugin's shipped default configuration
+    // (lib/widgets/config.js): a layer that invents a caption, a snow glyph or
+    // "only on new sessions" where the plugin's default says otherwise is a
+    // second source of truth nobody asked for.
     enabled: true,
-    onlyOnNewSession: true,
+    onlyOnNewSession: false,
     clock: {
       enabled: true,
       anchor: { left: '14.6%', top: '9.5%' },
@@ -60,8 +65,8 @@
       backdrop: 0.28
     },
     caption: { enabled: true, text: '', sub: '' },
-    meta: { enabled: true, anchor: { right: '3.4%', top: '9.5%' }, showFps: true, themeName: '', themeAlias: '' },
-    weather: { enabled: true, anchor: { right: '2.6%', top: '1.6%' }, glyph: '雪', temperature: '' },
+    meta: { enabled: true, anchor: { right: '3.2%', top: '10.2%' }, showFps: true, themeName: '', themeAlias: '' },
+    weather: { enabled: false, anchor: { right: '2.3%', top: '0.9%' }, glyph: '', temperature: '' },
     character: { enabled: false, src: '', anchor: { right: '1.6%', bottom: '0.8%' }, height: '30%' },
     /**
      * Text colour is normally decided from the wallpaper under the text:

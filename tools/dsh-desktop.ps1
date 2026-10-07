@@ -20,11 +20,14 @@
   build 26200 — with icons shown, the DSH layer stays covered. Pass
   -WithIcons to keep them visible anyway.
 
-  Failure containment: `start` verifies the bridge result and the rendered page
-  before hiding icons, and rolls back (icons back, desktop mode off) if either
-  check fails. `stop` always restores the icon list through
-  tools/restore-desktop-icons.ps1, which works even when the shell is already
-  dead — CDP alone cannot recover that case.
+  Failure containment: `start` verifies the attach result and then *probes* the
+  rendered page. The probe is advisory: a shell that is still booting its plugin
+  bundles (measured well past 90s on a loaded machine) must not cost a healthy
+  layer, so a page that has not rendered yet is reported, not punished. Real
+  failures still throw: the attach itself, hiding the icons, and a plugin-owned
+  widget layer that did not mount while it is enabled. `stop` always restores the
+  icon list through tools/restore-desktop-icons.ps1, which works even when the
+  shell is already dead — CDP alone cannot recover that case.
 
 .EXAMPLE
   pwsh -File tools/dsh-desktop.ps1 start
@@ -434,6 +437,12 @@ function Hide-DesktopIcons {
 # injection daemon is no longer part of the normal path. The daemon stays as an
 # explicit opt-in (widgets-on) for comparing against the legacy behaviour.
 function Test-DesktopPluginInstalled {
+  # Ask the running host first: the plugin's routes only exist when the plugin is
+  # installed *and* the host loaded it. A profile-file check alone can say "not
+  # installed" for a composition that does not use the web profile, and then the
+  # legacy daemon branch runs and cannot even find its files.
+  $live = Get-PluginSettings
+  if ($live -and $live.ok -eq $true) { return $true }
   $profile = Join-Path $env:USERPROFILE '.dsh\profiles\web\package.json'
   if (-not (Test-Path $profile)) { return $false }
   try {
@@ -894,18 +903,39 @@ switch ($Action) {
     }
   }
   'widgets-resample' {
-    $result = Invoke-Widgets -Mode 'resample'
-    if ($result.contrast) {
-      Write-Host "widget layer resampled (palettes: $($result.contrast.palettes | ConvertTo-Json -Compress))"
+    if (Test-DesktopPluginInstalled) {
+      # Rebuilding the layer re-reads the wallpaper and re-decides the palette, and
+      # it is the only lever the plugin exposes — the legacy injector cannot run
+      # here at all (it wants <root>\config\widgets.json and <root>\widgets\).
+      $before = Get-WidgetState
+      if ($null -eq $before) { throw 'the widget layer state is unreadable, so a resample cannot be confirmed' }
+      if ($before.mounted -ne $true) {
+        Write-Host 'the widget layer is disabled (widgets-off), so there is nothing to resample'
+        return
+      }
+      $renders = [int]$before.renders
+      $null = Request-PluginWidgetReload
+      $after = Wait-WidgetRenderChange -Previous $renders
+      if ($null -eq $after) { throw "the page did not rebuild the widget layer within 15s (renders stayed $renders)" }
+      Write-Host "widget layer rebuilt and re-sampled (renders $renders -> $($after.renders))"
     } else {
-      Write-Host 'resample requested (page reported no contrast state yet)'
+      $result = Invoke-Widgets -Mode 'resample'
+      if ($result.contrast) {
+        Write-Host "widget layer resampled (palettes: $($result.contrast.palettes | ConvertTo-Json -Compress))"
+      } else {
+        Write-Host 'resample requested (page reported no contrast state yet)'
+      }
     }
   }
   'widgets-off' {
     if (Test-DesktopPluginInstalled) {
       Set-PluginWidgetEnabled -Enabled $false | Out-Null
       $state = Wait-WidgetMounted -Mounted $false
-      if ($null -eq $state) { Write-Warning 'the page has not taken the layer down yet; it does so within one poll (~3s)' }
+      if ($null -eq $state) {
+        # The configuration is written, but the page has not acted on it yet. Say
+        # exactly that instead of claiming the layer is off.
+        throw 'the configuration was written but the page has not taken the layer down within 20s; it polls every 3s'
+      }
       Write-Host 'widget layer off (disabled in the plugin configuration; it stays off across reloads)'
     } else {
       Stop-WidgetDaemon
@@ -919,7 +949,16 @@ switch ($Action) {
       # rebuild the layer themselves, so a reload is a request to the plugin —
       # nothing here touches the debug port or guesses a configuration path.
       $before = Get-WidgetState
-      $renders = if ($before -and $null -ne $before.renders) { [int]$before.renders } else { -1 }
+      if ($null -eq $before) { throw 'the widget layer state is unreadable, so a reload cannot be confirmed' }
+      if ($null -eq $before.renders) { throw "the page does not report a render count (instance $($before.instanceId)); update the plugin" }
+      $renders = [int]$before.renders
+      if ($before.mounted -ne $true) {
+        # A disabled layer has nothing to rebuild: `render()` returns before it
+        # builds anything. Say so instead of waiting 15s and reporting a failure
+        # for a perfectly legal state.
+        Write-Host 'the widget layer is disabled (widgets-off), so there is nothing to reload; turn it on with widgets-on'
+        return
+      }
       $null = Request-PluginWidgetReload
       $after = Wait-WidgetRenderChange -Previous $renders
       if ($null -eq $after) { throw "the page did not rebuild the widget layer within 15s (renders stayed $renders)" }

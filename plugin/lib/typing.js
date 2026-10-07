@@ -200,6 +200,12 @@
         // code wrote "desktop / no keyboard / on the layer" unconditionally,
         // which is exactly the kind of cached assumption this layer must not
         // hold (a failed demote can leave the window out of the desktop).
+        //
+        // The mode has to leave 'demoting' first: `verify()` only corrects a
+        // 'promoted' state, and every later attempt (blur, Esc, a click
+        // elsewhere) is guarded by `mode === 'promoted'`, so staying in
+        // 'demoting' would wedge the trigger into never trying again.
+        state.mode = 'promoted'
         note('demote-failed', (payload && payload.error) || 'no answer')
         return verify().then(function () { return state.mode === 'desktop' })
       }

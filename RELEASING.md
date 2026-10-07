@@ -34,7 +34,7 @@ pwsh -File packaging/verify-release.ps1
 1. zip 的 sha256 与 `dist\SHA256SUMS.txt` 里记的一致（**stale 校验和是最容易发出去的错**）；
 2. 安装器与启动器需要的每个文件都在（含原生 `tools/bin/dsh-desktop-input.exe`、托盘图标、插件四件套 `lib/{index,client,typing,settings-page}.js` 与 `lib/widgets/*`）；
 3. 没有任何私有目录：`shell/` `logs/` `state/` `.evidence/` `config/` `dist/` `node_modules/`；
-4. 没有任何私人路径（`C:\Users\<你>`、`D:\DSH-Workspace`）、私人内容、密钥字面量；
+4. 没有任何私人绝对路径（某个用户的主目录、开发机的工程目录）、私人内容、密钥字面量；
 5. 包里每个 `.js`/`.mjs` 都能 `node --check`，每个 `.ps1` 都能被 PowerShell 解析；
 6. **解包出来的那份 `lib/widgets/config.js` 仍然满足配置契约**（拿恶意输入喂 `normalize()`，检查它被拒且被修好）；
 7. 二进制只有原生工具和托盘图标两个；

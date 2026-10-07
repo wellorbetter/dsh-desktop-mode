@@ -16,9 +16,9 @@
   'use strict'
   if (window.__dshDesktopMode) return
 
-  // Client module revision, used only until /boot answers with the package
-  // version; `/boot` is the authority so the two can never disagree for long.
-  var VERSION = '0.0.2'
+  // Only used until /boot answers: `/boot` reports the version from the package,
+  // and inventing a number here is exactly how this drifted before.
+  var VERSION = 'unknown'
   var BASE = '/dsh-desktop-mode'
   var ACTION_URL = BASE + '/action'
   var BLOCK = { left: '14.6%', top: '9.5%' }
@@ -229,7 +229,9 @@
             } catch { /* the widget layer may not be mounted */ }
           }
           if (configChanged && window.__dshDesktopMode && typeof window.__dshDesktopMode.reloadWidgets === 'function') {
-            window.__dshDesktopMode.reloadWidgets('config-changed')
+            window.__dshDesktopMode.reloadWidgets('config-changed').then(null, function () {
+              /* the layer may be missing or disabled: the next poll retries */
+            })
           }
         })
         .catch(function () { /* host gone: the page keeps its last palette */ })
@@ -307,7 +309,13 @@
     resampleWidgets: function (reason) {
       var api = window.__dshDesktopWidgets
       return api && api.resample ? api.resample(reason || 'client-api') : null
-    },
-    version: (state.boot && state.boot.version) || VERSION
+    }
   }
+  // The version must be a getter: the boot payload arrives asynchronously, so a
+  // data property read at object-literal time would always be the module's own
+  // fallback (that is exactly how this drifted from package.json before).
+  Object.defineProperty(window.__dshDesktopMode, 'version', {
+    enumerable: true,
+    get: function () { return (state.boot && state.boot.version) || VERSION }
+  })
 })()

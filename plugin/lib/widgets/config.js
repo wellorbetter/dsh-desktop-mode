@@ -215,6 +215,12 @@ export function normalize(input, base = {}) {
   for (const field of FIELDS) {
     const raw = readPath(source, field.path)
     if (raw === undefined) continue
+    // A cleared number box must not silently become the minimum: an empty value
+    // means "I did not fill this in", so the value beneath it stays.
+    if (field.type === 'number' && typeof raw === 'string' && raw.trim() === '') {
+      issues.push({ path: field.path, reason: 'empty number keeps the previous value' })
+      continue
+    }
     const result = coerceField(field, raw)
     if (result.value === undefined) {
       issues.push({ path: field.path, reason: result.reason, refused: raw })
